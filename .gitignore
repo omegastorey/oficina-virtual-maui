@@ -23,3 +23,5 @@ TestResults/
 # Otros temporales
 *.tmp
 *.cache
+*.keystore
+*.jks
