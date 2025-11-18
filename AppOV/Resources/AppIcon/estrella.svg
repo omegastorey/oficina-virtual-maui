@@ -1,0 +1,11 @@
+<!-- Resources/AppIcon/estrella.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 108 108">
+  <!-- Fondo sólido requerido por iOS (sin transparencia) -->
+  <rect width="108" height="108" fill="#FFFFFF"/>
+
+  <!-- Figura centrada y con margen (safe-zone). Ajustá scale si querés más/menos margen -->
+  <g transform="translate(54 54) scale(2.4) translate(-15 -15)">
+    <path d="M15 0C15.1401 0 15.2578 0.117713 15.2635 0.257848C15.5269 8.13341 21.8666 14.4731 29.7422 14.7365C29.8879 14.7365 30 14.8543 30 15C30 15.1457 29.8823 15.2578 29.7422 15.2635C21.8666 15.5269 15.5269 21.8666 15.2635 29.7422C15.2635 29.8823 15.1457 30 15 30C14.8543 30 14.7422 29.8823 14.7365 29.7422C14.4731 21.8666 8.13341 15.5269 0.257843 15.2635C0.117708 15.2635 0 15.1457 0 15C0 14.8543 0.117708 14.7422 0.257843 14.7365C8.13341 14.4731 14.4731 8.13341 14.7365 0.257848C14.7365 0.117713 14.8543 0 15 0Z"
+          fill="#153C46"/>
+  </g>
+</svg>

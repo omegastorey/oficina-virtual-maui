@@ -1,0 +1,25 @@
+# Build / IDE
+bin/
+obj/
+[Bb]uild/
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+
+# Test / paquetes / logs
+TestResults/
+*.log
+*.pdb
+*.mdb
+
+# MAUI salidas
+*.apk
+*.aab
+*.ipa
+
+# Otros temporales
+*.tmp
+*.cache

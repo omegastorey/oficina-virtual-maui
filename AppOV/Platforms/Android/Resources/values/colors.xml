@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- ÚNICO punto de verdad para el color de marca del splash -->
+  <color name="brandPrimary">#153C46</color>
+
+  <!-- Compat con nombres clásicos -->
+  <color name="colorPrimary">@color/brandPrimary</color>
+  <color name="colorPrimaryDark">@color/brandPrimary</color>
+  <color name="colorAccent">@color/brandPrimary</color>
+
+  <!-- Alias legado -->
+  <color name="edelap_teal">@color/brandPrimary</color>
+</resources>

@@ -1,0 +1,24 @@
+<ContentPage x:Class="AppOV.Views.WebViewPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
+             BackgroundColor="{DynamicResource BrandPrimaryColor}"
+             Shell.NavBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             ios:Page.UseSafeArea="True">
+
+    <!-- padding solo para Android -->
+    <ContentPage.Padding>
+        <OnPlatform x:TypeArguments="Thickness">
+            <On Platform="Android" Value="0,32,0,0" />
+            <On Platform="iOS" Value="0" />
+            <On Platform="WinUI" Value="0" />
+        </OnPlatform>
+    </ContentPage.Padding>
+
+    <WebView x:Name="MyWebView"
+             BackgroundColor="Transparent"
+             HorizontalOptions="FillAndExpand"
+             VerticalOptions="FillAndExpand"
+             AutomationProperties.Name="OficinaVirtualWebView" />
+</ContentPage>

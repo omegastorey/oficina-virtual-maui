@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+  <!-- Permisos necesarios para que WebView pueda acceder a Internet -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+  <application
+      android:allowBackup="true"
+      android:label="Edelap OVR QA"
+      android:theme="@style/Maui.MainTheme"
+      android:supportsRtl="true"
+      android:icon="@mipmap/estrella"
+      android:usesCleartextTraffic="true"
+      android:networkSecurityConfig="@xml/network_security_config">
+
+    <!-- MainActivity: solo MAIN/LAUNCHER.-->
+    <activity
+        android:name="com.storey.AppOV.Edelap.MainActivity"
+        android:exported="true"
+        android:launchMode="singleTask"
+        android:theme="@style/Maui.SplashTheme"
+        tools:node="merge">
+
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+
+    </activity>
+    <!-- DeepLinkActivity: puente NO-MAUI -->
+    <activity
+        android:name="com.storey.AppOV.Edelap.DeepLinkActivity"
+        android:exported="true"
+        android:noHistory="true"
+        android:launchMode="singleTop"
+        android:theme="@style/Maui.SplashTheme"
+        tools:node="merge">
+
+      <!-- QA: login + registrar -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovqa.storey.com.ar"
+              android:pathPrefix="/iniciar-sesion"/>
+      </intent-filter>
+
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovqa.storey.com.ar"
+              android:pathPrefix="/registrar"/>
+      </intent-filter>
+
+      <!-- DEV: si corresponde -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovdev.storey.com.ar"
+              android:pathPrefix="/iniciar-sesion"/>
+      </intent-filter>
+
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovdev.storey.com.ar"
+              android:pathPrefix="/registrar"/>
+      </intent-filter>
+      
+      <!-- CATCH-ALL QA: abre la app para cualquier URL del host -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovqa.storey.com.ar"
+              android:pathPrefix="/"/>
+      </intent-filter>
+
+      <!-- CATCH-ALL DEV: idem para ovdev si lo usás -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"
+              android:host="edelap.ovdev.storey.com.ar"
+              android:pathPrefix="/"/>
+      </intent-filter>
+
+      <!-- OPCIONAL: “catch-all” para el host por si el callback NO usa exactamente esas rutas -->
+      <!-- Si lo activás, la app puede abrirse para cualquier URL de ese host -->
+      <!--
+  <intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW"/>
+    <category android:name="android.intent.category.DEFAULT"/>
+    <category android:name="android.intent.category.BROWSABLE"/>
+    <data android:scheme="https"
+          android:host="edelap.ovqa.storey.com.ar"
+          android:pathPrefix="/"/>
+  </intent-filter>
+  -->
+    </activity>
+  </application>
+</manifest>
