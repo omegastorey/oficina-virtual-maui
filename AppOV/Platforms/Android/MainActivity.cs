@@ -11,30 +11,48 @@ using System;
 using System.Linq;
 using AppOV.Views;
 using Android.Webkit;
+using Android.Content.Res;
+
+// Alias para evitar el conflicto con Resource (CS0104)
+using AppResource = AppOV.Resource;
+
 namespace AppOV
 {
+    // Activity original para Edelap
     [Activity(
         Name = "com.storey.AppOV.Edelap.MainActivity",
         Theme = "@style/Maui.SplashTheme",
         MainLauncher = true,
         LaunchMode = LaunchMode.SingleTask,
         Exported = true,
-        ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation |
-                               ConfigChanges.UiMode | ConfigChanges.ScreenLayout |
-                               ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+        ConfigurationChanges =
+            ConfigChanges.ScreenSize |
+            ConfigChanges.Orientation |
+            ConfigChanges.UiMode |
+            ConfigChanges.ScreenLayout |
+            ConfigChanges.SmallestScreenSize |
+            ConfigChanges.Density |
+            ConfigChanges.KeyboardHidden |
+            ConfigChanges.Keyboard |
+            ConfigChanges.Navigation
+        )]
     public class MainActivity : MauiAppCompatActivity
     {
+        private const string LogTag = "MainActivity";
         protected override void OnCreate(Bundle? savedInstanceState)
         {
+            AppLogger.Log(LogTag, $"OnCreate");
             base.OnCreate(savedInstanceState);
-
+            Android.Webkit.WebView.SetWebContentsDebuggingEnabled(true);
             try
             {
                 // Fondo blanco splash
                 Window?.SetBackgroundDrawable(new ColorDrawable(Android.Graphics.Color.White));
 
                 // Colores de sistema (status + nav)
-                var brand = new Android.Graphics.Color(ContextCompat.GetColor(this, Resource.Color.brandPrimary));
+                var brand = new Android.Graphics.Color(
+                    ContextCompat.GetColor(this, AppResource.Color.brandPrimary));
+
                 Window?.SetStatusBarColor(brand);
                 Window?.SetNavigationBarColor(brand);
 
@@ -43,7 +61,7 @@ namespace AppOV
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Error("MainActivity", $"Init UI/Cookies failed: {ex}");
+                AppLogger.Log(LogTag, $"Init UI/Cookies failed: {ex}");
             }
 
 #if DEBUG
@@ -52,23 +70,30 @@ namespace AppOV
                 if (Build.VERSION.SdkInt >= BuildVersionCodes.Kitkat)
                 {
                     global::Android.Webkit.WebView.SetWebContentsDebuggingEnabled(true);
-                    Android.Util.Log.Debug("MainActivity", "WebView remote debugging ENABLED");
+                    AppLogger.Log(LogTag, $"WebView remote debugging ENABLED");
                 }
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Error("MainActivity", $"Enable WebView debugging failed: {ex}");
+                AppLogger.Log(LogTag, $"Enable WebView debugging failed: {ex}");
             }
 #endif
 
-            Android.Util.Log.Debug("MainActivity", "OnCreate");
             HandleIncomingUrl(Intent);
+        }
+
+        // ConfigChanges arriba, al rotar NO se destruye la Activity,
+        // solo se llama a este método.
+        public override void OnConfigurationChanged(Configuration newConfig)
+        {
+            base.OnConfigurationChanged(newConfig);
+            AppLogger.Log(LogTag, $"OnConfigurationChanged -> Orientation={newConfig.Orientation}");
         }
 
         protected override void OnNewIntent(Intent? intent)
         {
             base.OnNewIntent(intent);
-            Android.Util.Log.Debug("MainActivity", "OnNewIntent");
+            AppLogger.Log(LogTag, $"OnNewIntent");
             HandleIncomingUrl(intent);
         }
 
@@ -77,29 +102,33 @@ namespace AppOV
             try
             {
                 var data = intent?.Data;
-                Android.Util.Log.Debug("MainActivity", $"HandleIncomingUrl raw: {data}");
+                AppLogger.Log(LogTag, $"HandleIncomingUrl raw: {data}");
                 if (data == null) return;
 
                 var scheme = (data.Scheme ?? string.Empty).ToLowerInvariant();
                 var host = (data.Host ?? string.Empty).ToLowerInvariant();
                 var path = data.Path ?? string.Empty;
 
+                // Edelap + Cashpower + hosts locales / ngrok
                 bool isKnownHost =
                     host == "edelap.ovqa.storey.com.ar" ||
                     host == "edelap.ovdev.storey.com.ar" ||
+                    host == "portalderecargaqa.cashpower.com.ar" ||
+                    host == "portalderecargadev.cashpower.com.ar" ||
+                    host == "portalderecarga.cashpower.com.ar" ||
                     host == "hemikaryotic-sanford-unmetallically.ngrok-free.dev" ||
                     host == "localhost" || host == "10.0.2.2" || host == "192.168.0.102";
 
                 bool isKnownPath =
                     path.StartsWith("/iniciar-sesion", StringComparison.OrdinalIgnoreCase) ||
-                    path.StartsWith("/registrar", StringComparison.OrdinalIgnoreCase);
+                    path.StartsWith("/registrar", StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith("/iniciar-sesion/registro", StringComparison.OrdinalIgnoreCase);
 
                 if (!((scheme == "https" || scheme == "http") && isKnownHost && isKnownPath))
                     return;
 
                 var callbackUrl = data.ToString();
-                Android.Util.Log.Debug("MainActivity", $"[HIT] AppLink -> {callbackUrl}");
-
+                AppLogger.Log(LogTag, $"[HIT] AppLink -> {callbackUrl}");
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
                     try
@@ -121,13 +150,13 @@ namespace AppOV
                     }
                     catch (Exception exUi)
                     {
-                        Android.Util.Log.Error("MainActivity", $"Forward AppLink to WebView failed: {exUi}");
+                        AppLogger.Log(LogTag, $"Forward AppLink to WebView failed: {exUi}");
                     }
                 });
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Error("MainActivity", $"HandleIncomingUrl error: {ex}");
+                AppLogger.Log(LogTag, $"HandleIncomingUrl error: {ex}");
             }
         }
 
@@ -155,9 +184,31 @@ namespace AppOV
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Error("MainActivity", $"ResolveCurrentWebViewPage failed: {ex}");
+                AppLogger.Log(LogTag, $"ResolveCurrentWebViewPage failed: {ex}");
                 return null;
             }
         }
+    }
+
+    // Activity para Cashpower, reutiliza lo de MainActivity
+    [Activity(
+        Name = "com.storey.AppOV.Cashpower.MainActivity",
+        Theme = "@style/Maui.SplashTheme",
+        MainLauncher = false,
+        LaunchMode = LaunchMode.SingleTask,
+        Exported = true,
+        ConfigurationChanges =
+            ConfigChanges.ScreenSize |
+            ConfigChanges.Orientation |
+            ConfigChanges.UiMode |
+            ConfigChanges.ScreenLayout |
+            ConfigChanges.SmallestScreenSize |
+            ConfigChanges.Density |
+            ConfigChanges.KeyboardHidden |
+            ConfigChanges.Keyboard |
+            ConfigChanges.Navigation)]
+    public class CashpowerMainActivity : MainActivity
+    {
+        // Hereda OnCreate / OnConfigurationChanged / OnNewIntent / HandleIncomingUrl
     }
 }

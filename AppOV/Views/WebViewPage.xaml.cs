@@ -19,59 +19,216 @@ namespace AppOV.Views
 {
     public partial class WebViewPage : ContentPage
     {
+        private const string LogTag = "WebViewPage";
+
+        private const string PrefGlobalClearedKey = "web_global_cleared_once";
+        private const string PrefLastUrlKey = "web_last_url";
+
+        // Limpieza global: solo una vez por ciclo de vida del proceso
+        private static bool _globalClearedOnce = Preferences.Get(PrefGlobalClearedKey, false);
+
         private bool _tokenHookInjected;
         private bool _providerHookInjected;
         private bool _iframeHookInjected;
         private bool _clearedForStart;
+
+        // Para saber que ya hubo al menos una conexión de handler
+        //private bool _handlerAttachedOnce;
 
         public WebViewPage(string url)
         {
             InitializeComponent();
             NavigationPage.SetHasNavigationBar(this, false);
 
+            var hasToken = HasSavedToken();
+            var lastUrl = Preferences.Get(PrefLastUrlKey, null);
+            var effectiveUrl = url;
+
+            if (hasToken)
+            {
+                if (!string.IsNullOrWhiteSpace(lastUrl) && !LooksLoginPath(lastUrl))
+                {
+                    effectiveUrl = lastUrl;
+                    AppLogger.Log(LogTag,
+                        $"ctor – hay token y lastUrl={lastUrl}; uso esa URL.");
+                }
+                else if (IsLoginStartUrl(url) || LooksLoginPath(url))
+                {
+                    var root = GetRootUrl(url);
+                    effectiveUrl = root;
+                    AppLogger.Log(LogTag,
+                        $"ctor – hay token pero url inicial es login; cambio a root: {effectiveUrl}");
+                }
+            }
+
+            AppLogger.Log(LogTag, $"ctor – url solicitada: {url}");
+            AppLogger.Log(LogTag, $"ctor – url efectiva: {effectiveUrl}");
+
             MyWebView.Navigating += OnWebViewNavigating;
             MyWebView.Navigated += OnWebViewNavigated;
 
-            _ = NavigateFreshAsync(url);
+            _ = NavigateFreshAsync(effectiveUrl);
+        }
+
+        protected override void OnHandlerChanged()
+        {
+            base.OnHandlerChanged();
+
+            if (Handler == null)
+                return;
+
+            try
+            {
+                var lastUrl = Preferences.Get(PrefLastUrlKey, null);
+                var hasToken = HasSavedToken();
+
+                var currentUrl = (MyWebView.Source as UrlWebViewSource)?.Url ?? string.Empty;
+
+                AppLogger.Log(LogTag,
+                    $"OnHandlerChanged(hasToken={hasToken}) lastUrl={lastUrl}, current={currentUrl}");
+
+                // 1) Si tengo lastUrl válida, hago lo que ya tenías
+                if (!string.IsNullOrWhiteSpace(lastUrl))
+                {
+                    if (LooksLoginPath(lastUrl) && !hasToken)
+                    {
+                        AppLogger.Log(LogTag,
+                            "OnHandlerChanged -> lastUrl es login sin token; dejo Source actual.");
+                        return;
+                    }
+
+                    if (string.Equals(currentUrl, lastUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AppLogger.Log(LogTag,
+                            "OnHandlerChanged -> MyWebView ya está en lastUrl, no renavego.");
+                        return;
+                    }
+
+                    AppLogger.Log(LogTag,
+                        $"OnHandlerChanged -> re-navegando a última URL: {lastUrl}");
+                    MyWebView.Source = lastUrl;
+                    return;
+                }
+
+                // 2) NO hay lastUrl, pero SÍ hay token y estamos en login -> ir a root del sitio
+                if (hasToken && LooksLoginPath(currentUrl))
+                {
+                    var root = GetRootUrl(currentUrl);
+                    AppLogger.Log(LogTag,
+                        $"OnHandlerChanged -> hay token pero no lastUrl y estamos en login; voy a root: {root}");
+                    MyWebView.Source = root;
+                }
+                else
+                {
+                    AppLogger.Log(LogTag,
+                        "OnHandlerChanged -> no hay lastUrl; dejo Source actual.");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log(LogTag, $"OnHandlerChanged error: {ex}");
+            }
+        }
+
+        private static string GetRootUrl(string url)
+        {
+            try
+            {
+                var u = new Uri(url, UriKind.Absolute);
+                var root = $"{u.Scheme}://{u.Host}{(u.IsDefaultPort ? "" : ":" + u.Port)}/";
+                return root;
+            }
+            catch
+            {
+                return url;
+            }
         }
 
         private async Task NavigateFreshAsync(string url)
         {
             try
             {
-                if (IsLoginStartUrl(url) && !_clearedForStart)
+                AppLogger.Log(LogTag, $"NavigateFreshAsync – url: {url}");
+                if (IsLoginStartUrl(url) && !_globalClearedOnce)
                 {
+                    AppLogger.Log(LogTag, "LoginStart detectado, limpiando estado web (cookies+storage+cache).");
                     await ClearWebStateAsync(includeCookies: true, includeStorage: true, includeCache: true);
+                    _globalClearedOnce = true;
+                    Preferences.Set(PrefGlobalClearedKey, true); // *** CAMBIO: uso constante
                     _clearedForStart = true;
                 }
+
                 MyWebView.Source = url;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WebViewPage] NavigateFreshAsync error: {ex}");
+                AppLogger.Log(LogTag, $"NavigateFreshAsync error: {ex}");
                 MyWebView.Source = url;
             }
+        }
+
+        private static bool LooksLoginPath(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+
+            try
+            {
+                var u = new Uri(url, UriKind.Absolute);
+                var path = (u.AbsolutePath ?? string.Empty).ToLowerInvariant();
+                return path.StartsWith("/iniciar-sesion") || path.StartsWith("/registrar");
+            }
+            catch
+            {
+                var lower = url.ToLowerInvariant();
+                return lower.Contains("/iniciar-sesion") || lower.Contains("/registrar");
+            }
+        }
+
+        private static bool HasSavedToken()
+        {
+            var saved = Preferences.Get("web_jwt", null);
+            var has = !string.IsNullOrEmpty(saved);
+            AppLogger.Log("WebViewPage", $"HasSavedToken -> {has} (len={saved?.Length ?? 0})");
+            return has;
         }
 
         private static bool IsLoginStartUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
+
+            var hasToken = HasSavedToken();
+
             try
             {
                 var u = new Uri(url, UriKind.Absolute);
                 var path = (u.AbsolutePath ?? string.Empty).ToLowerInvariant();
                 var query = (u.Query ?? string.Empty).ToLowerInvariant();
 
-                bool looksCallback = query.Contains("code=") || query.Contains("id_token=") || query.Contains("access_token=");
-                bool looksStart = path.StartsWith("/iniciar-sesion") || path.StartsWith("/registrar");
-                return looksStart && !looksCallback;
+                bool looksCallback = query.Contains("code=") ||
+                                     query.Contains("id_token=") ||
+                                     query.Contains("access_token=");
+
+                bool looksStartPath = path.StartsWith("/iniciar-sesion") ||
+                                      path.StartsWith("/registrar");
+
+                // Inicio de login SOLO si:
+                //  - es path de login/registro
+                //  - no es callback con code/tokens
+                //  - y aún NO tenemos token guardado
+                return looksStartPath && !looksCallback && !hasToken;
             }
             catch
             {
                 var lower = url.ToLowerInvariant();
-                bool looksCallback = lower.Contains("code=") || lower.Contains("id_token=") || lower.Contains("access_token=");
-                bool looksStart = lower.Contains("/iniciar-sesion") || lower.Contains("/registrar");
-                return looksStart && !looksCallback;
+
+                bool looksCallback = lower.Contains("code=") ||
+                                     lower.Contains("id_token=") ||
+                                     lower.Contains("access_token=");
+
+                bool looksStartPath = lower.Contains("/iniciar-sesion") ||
+                                      lower.Contains("/registrar");
+
+                return looksStartPath && !looksCallback && !hasToken;
             }
         }
 
@@ -79,6 +236,11 @@ namespace AppOV.Views
         {
             try
             {
+                AppLogger.Log(LogTag, $"ClearWebStateAsync(cookies={includeCookies}, storage={includeStorage}, cache={includeCache})");
+                // limpiamos también preferencias de token/proveedor
+                Preferences.Remove("web_jwt");
+                Preferences.Remove("web_provider");
+                Preferences.Remove(PrefLastUrlKey);
 #if ANDROID
                 if (includeCookies)
                 {
@@ -93,7 +255,7 @@ namespace AppOV.Views
                     }
                     catch (Exception exCookies)
                     {
-                        Android.Util.Log.Warn("WebViewPage", $"Clear cookies warning: {exCookies.Message}");
+                        AppLogger.Log(LogTag, $"Clear cookies warning: {exCookies.Message}");
                     }
                 }
 
@@ -102,7 +264,7 @@ namespace AppOV.Views
                     try { WebStorage.Instance?.DeleteAllData(); }
                     catch (Exception exStorage)
                     {
-                        Android.Util.Log.Warn("WebViewPage", $"Clear WebStorage warning: {exStorage.Message}");
+                        AppLogger.Log(LogTag, $"Clear WebStorage warning: {exStorage.Message}");
                     }
                 }
 
@@ -116,7 +278,7 @@ namespace AppOV.Views
                     }
                     catch (Exception exCache)
                     {
-                        Android.Util.Log.Warn("WebViewPage", $"Clear cache/history warning: {exCache.Message}");
+                        AppLogger.Log(LogTag, $"Clear cache/history warning: {exCache.Message}");
                     }
                 }
 #endif
@@ -135,7 +297,7 @@ namespace AppOV.Views
                             try { tcs.TrySetResult(true); }
                             catch (Exception exCb)
                             {
-                                Debug.WriteLine($"[WebViewPage] RemoveData callback error: {exCb}");
+                                AppLogger.Log(LogTag, $"RemoveData callback error: {exCb}");
                                 tcs.TrySetResult(false);
                             }
                         });
@@ -143,20 +305,21 @@ namespace AppOV.Views
                     }
                     catch (Exception exIos)
                     {
-                        Debug.WriteLine($"[WebViewPage] iOS/MacCatalyst clear failed: {exIos}");
+                        AppLogger.Log(LogTag, $"iOS/MacCatalyst clear failed: {exIos}");
                     }
                 }
 #endif
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WebViewPage] ClearWebStateAsync error: {ex}");
+                AppLogger.Log(LogTag, $"ClearWebStateAsync error: {ex}");
             }
         }
 
         public void LoadCallbackUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url)) return;
+
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 try
@@ -168,7 +331,7 @@ namespace AppOV.Views
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"LoadCallbackUrl error: {ex}");
+                    AppLogger.Log(LogTag, $"LoadCallbackUrl error: {ex}");
                 }
             });
         }
@@ -177,11 +340,87 @@ namespace AppOV.Views
         {
             try
             {
+                AppLogger.Log(LogTag, $" Navigating -> {e?.Url}");
                 var next = e?.Url?.Trim() ?? string.Empty;
-                if (IsLoginStartUrl(next) && !_clearedForStart)
+
+                if (!string.IsNullOrEmpty(next))
+                {
+                    var looksLogin = LooksLoginPath(next);
+                    var hasToken = HasSavedToken();
+                    var lastUrl = Preferences.Get(PrefLastUrlKey, null);
+
+                    // Considero que hubo sesión real si alguna vez navegué a una URL NO login
+                    var hadSession = !string.IsNullOrWhiteSpace(lastUrl) && !LooksLoginPath(lastUrl);
+
+                    // caso rotación / reanudación con sesión abierta
+    
+                    if (looksLogin && hasToken && string.IsNullOrWhiteSpace(lastUrl))
+                    {
+                        var root = GetRootUrl(next);
+                        AppLogger.Log(LogTag,
+                            $"[NAV] Login+token pero SIN lastUrl previa -> asumo reanudación de sesión, redirijo a root: {root}");
+                        e.Cancel = true;
+                        MyWebView.Source = root;
+                        return;
+                    }
+
+                    // si el servidor nos manda a login teniendo token guardado,
+                    // asumimos que ese token ya no sirve y limpiamos estado local
+                    // SOLO si sabemos que antes estuvimos dentro (hadSession = true)
+                    if (looksLogin && hasToken)
+                    {
+                        if (hadSession)
+                        {
+                            AppLogger.Log(LogTag,
+                                $"[NAV] Detectado login teniendo JWT guardado y lastUrl interna={lastUrl} -> reseteo prefs (token/provider/lastUrl) para permitir login limpio.");
+                            Preferences.Remove("web_jwt");
+                            Preferences.Remove("web_provider");
+                            Preferences.Remove(PrefLastUrlKey);
+                            hasToken = false;
+                        }
+                        else
+                        {
+                            AppLogger.Log(LogTag,
+                                $"[NAV] Login con token pero SIN lastUrl interna (lastUrl={lastUrl ?? "<null>"}). No limpio prefs para no romper sesión inicial/SPA.");
+                        }
+                    }
+
+                    // filtro también proveedores externos ---
+                    var isProviderUrl = false;
+                    if (Uri.TryCreate(next, UriKind.Absolute, out var parsed))
+                    {
+                        var host = (parsed.Host ?? string.Empty).ToLowerInvariant();
+                        isProviderUrl =
+                            host.Contains("accounts.google.") ||
+                            host.Contains("appleid.apple.") ||
+                            host.Contains("identity.apple.com") ||
+                            host.Contains("login.microsoftonline.") ||
+                            host.Contains("login.live.");
+                    }
+
+                    // Solo guardo lastUrl si:
+                    //   - NO es path de login, o
+                    //   - SÍ es path de login pero ya hay token (SPA que sigue en /iniciar-sesion)
+                    //   - Y además NO es navegación a proveedor externo
+                    if ((!looksLogin || hasToken) && !isProviderUrl)
+                    {
+                        Preferences.Set(PrefLastUrlKey, next);
+                        AppLogger.Log(LogTag,
+                            $"[NAV] Guardando lastUrl = {next} (looksLogin={looksLogin}, hasToken={hasToken}, isProviderUrl={isProviderUrl})");
+                    }
+                    else
+                    {
+                        AppLogger.Log(LogTag,
+                            $"[NAV] NO guardo lastUrl (looksLogin={looksLogin}, hasToken={hasToken}, isProviderUrl={isProviderUrl}) url={next}");
+                    }
+                }
+
+                if (IsLoginStartUrl(next) && !_globalClearedOnce)
                 {
                     e.Cancel = true;
                     await ClearWebStateAsync(true, true, true);
+                    _globalClearedOnce = true;
+                    Preferences.Set(PrefGlobalClearedKey, true);
                     _clearedForStart = true;
                     await Task.Delay(25);
                     MyWebView.Source = next;
@@ -224,7 +463,7 @@ namespace AppOV.Views
                         }
                         catch (Exception exJs)
                         {
-                            Debug.WriteLine($"[WebViewPage] set provider JS failed: {exJs}");
+                            AppLogger.Log(LogTag, $" set provider JS failed: {exJs}");
                         }
 
                         Preferences.Set("web_provider", provider);
@@ -237,17 +476,13 @@ namespace AppOV.Views
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error en OnWebViewNavigating: {ex}");
+                AppLogger.Log(LogTag, $"Error en OnWebViewNavigating: {ex}");
             }
         }
 
         private async void OnWebViewNavigated(object sender, WebNavigatedEventArgs e)
         {
-            async Task EvalJsAsync(string js, string tag)
-            {
-                try { await MyWebView.EvaluateJavaScriptAsync(js); }
-                catch (Exception ex) { Debug.WriteLine($"[WebViewPage][{tag}] {ex}"); }
-            }
+            AppLogger.Log(LogTag, $"Navigated -> {e?.Url}, Result={e.Result}");
 
             // probe
             const string probeJs = @"
@@ -293,18 +528,69 @@ namespace AppOV.Views
                 }})();";
             await EvalJsAsync(flagsJs, "nativeFlags");
 
-            // Re-inyecta token si existe
-            var saved = Preferences.Get("web_jwt", null);
-            if (!string.IsNullOrEmpty(saved))
+            var currentUrl = e?.Url ?? string.Empty;
+            var hasToken = HasSavedToken();
+            AppLogger.Log(LogTag, $"OnWebViewNavigated currentUrl={currentUrl}, hasToken={hasToken}");
+            // Tratar de leer token desde storage del sitio y pasarlo a jsBridge.OnToken
+            const string syncTokenJs = @"
+                (function(){
+                    try{
+                    var keys = ['access_token','token','jwt','id_token'];
+                    var found = null;
+
+                    for (var i = 0; i < keys.length; i++) {
+                        var k = keys[i];
+                        var v = null;
+                        try {
+                        if (window.localStorage)  v = v || window.localStorage.getItem(k);
+                        if (window.sessionStorage) v = v || window.sessionStorage.getItem(k);
+                        } catch(_){}
+                        if (v) { found = v; break; }
+                    }
+
+                    if (found && window.jsBridge && typeof window.jsBridge.OnToken === 'function') {
+                        window.jsBridge.OnToken(found);
+                    }
+                    } catch(e) {
+                    try {
+                        if (window.jsBridge && typeof window.jsBridge.Dbg === 'function') {
+                        window.jsBridge.Dbg('syncToken error: ' + e);
+                        }
+                    } catch(_){}
+                    }
+                })();";
+            await EvalJsAsync(syncTokenJs, "syncToken");
+
+            if (hasToken)
             {
-                var tok = EscapeForJs(saved);
-                var jsSet = (@"try {
-                  localStorage.setItem('access_token', '__TOKEN__');
-                  sessionStorage.setItem('access_token', '__TOKEN__');
-                  localStorage.setItem('token', '__TOKEN__');
-                } catch(e) {}").Replace("__TOKEN__", tok);
-                await EvalJsAsync(jsSet, "tokenReinject");
+                var saved = Preferences.Get("web_jwt", null);
+                if (!string.IsNullOrEmpty(saved))
+                {
+                    var tok = EscapeForJs(saved);
+                    var jsSet = (@"try {
+                            localStorage.setItem('access_token', '__TOKEN__');
+                            sessionStorage.setItem('access_token', '__TOKEN__');
+                            localStorage.setItem('token', '__TOKEN__');
+                        } catch(e) {}").Replace("__TOKEN__", tok);
+
+                    await EvalJsAsync(jsSet, "tokenReinject");
+                    AppLogger.Log(LogTag, "OnWebViewNavigated -> token reinyectado en la WebView.");
+                }
+                else
+                {
+                    AppLogger.Log(LogTag, "OnWebViewNavigated -> hasToken=true pero saved JWT vacío.");
+                }
             }
+            else
+            {
+                AppLogger.Log(LogTag, "OnWebViewNavigated -> no hay JWT guardado, no reinyecto.");
+            }
+        }
+
+        async Task EvalJsAsync(string js, string tag)
+        {
+            try { await MyWebView.EvaluateJavaScriptAsync(js); }
+            catch (Exception ex) { AppLogger.Log(LogTag, $"[{tag}] {ex}"); }
         }
 
         private static string EscapeForJs(string s)

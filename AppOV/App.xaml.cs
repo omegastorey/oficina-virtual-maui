@@ -60,39 +60,42 @@ namespace AppOV
 
         private static string ResolveStartUrl()
         {
-#if DEBUG
-            // Permite cambiar el host sin recompilar:
-            var envNgrok = Environment.GetEnvironmentVariable("OV_NGROK_HOST");
-            var ngrokHost = !string.IsNullOrWhiteSpace(envNgrok) ? envNgrok.Trim() : NgrokHostDefault;
+            return "https://edelap.ovqa.storey.com.ar";
+            //return "https://portalderecarga.cashpower.com.ar";
+            //#if DEBUG
+            //            // Permite cambiar el host sin recompilar:
+            //            var envNgrok = Environment.GetEnvironmentVariable("OV_NGROK_HOST");
+            //            var ngrokHost = !string.IsNullOrWhiteSpace(envNgrok) ? envNgrok.Trim() : NgrokHostDefault;
 
-#if ANDROID
-            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
-                return $"https://{ngrokHost}/iniciar-sesion";
+            //#if ANDROID
+            //            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
+            //                return $"https://{ngrokHost}/iniciar-sesion";
 
-            if (UseAdbReverse)
-                return $"http://localhost:{DevPort}/iniciar-sesion";
-            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
+            //            if (UseAdbReverse)
+            //                return $"http://localhost:{DevPort}/iniciar-sesion";
+            //            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
 
-#elif IOS
-            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
-                return $"https://{ngrokHost}/iniciar-sesion";
-            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
+            //#elif IOS
+            //            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
+            //                return $"https://{ngrokHost}/iniciar-sesion";
+            //            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
 
-#elif WINDOWS
-            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
-                return $"https://{ngrokHost}/iniciar-sesion";
-            return $"http://localhost:{DevPort}/iniciar-sesion";
+            //#elif WINDOWS
+            //            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
+            //                return $"https://{ngrokHost}/iniciar-sesion";
+            //            return $"http://localhost:{DevPort}/iniciar-sesion";
 
-#else
-            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
-                return $"https://{ngrokHost}/iniciar-sesion";
-            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
-#endif
+            //#else
+            //            if (UseNgrok && !string.IsNullOrWhiteSpace(ngrokHost))
+            //                return $"https://{ngrokHost}/iniciar-sesion";
+            //            return $"http://{DevPcLanIp}:{DevPort}/iniciar-sesion";
+            //#endif
 
-#else
-            // === PRODUCCIÓN ===
-            return "https://edelap.ovqa.storey.com.ar/iniciar-sesion";
-#endif
+            //#else
+            //            // === PRODUCCIÓN ===
+            //            //return "https://edelap.ovqa.storey.com.ar/iniciar-sesion";
+            //            return "https://portalderecarga.cashpower.com.ar/iniciar-sesion";
+            //#endif
         }
 
         protected override Window CreateWindow(IActivationState? activationState)

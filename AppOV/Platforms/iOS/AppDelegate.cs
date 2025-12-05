@@ -27,8 +27,8 @@ namespace AppOV
                         var path = url.Path ?? string.Empty;
 
                         bool match =
-                            (host == "edelap.ovqa.storey.com.ar" || host == "edelap.ovdev.storey.com.ar") &&
-                            (path.StartsWith("/iniciar-sesion") || path.StartsWith("/registrar"));
+                            (host == "edelap.ovqa.storey.com.ar" || host == "edelap.ovdev.storey.com.ar" || host == "portalderecarga.cashpower.com.ar" || host == "portalderecargaqa.cashpower.com.ar") &&
+                            (path.StartsWith("/iniciar-sesion") || path.StartsWith("/registrar")(path.StartsWith("/iniciar-sesion/registro") ||);
 
                         if (match)
                         {

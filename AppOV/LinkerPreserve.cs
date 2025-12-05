@@ -13,6 +13,11 @@ namespace AppOV
         [ModuleInitializer]
         internal static void Init()
         {
+            try
+            {
+                AppLogger.Log("LinkerPreserve", "Init() ejecutado");
+            }
+            catch { }
 #if ANDROID
             KeepAndroid();
 #endif

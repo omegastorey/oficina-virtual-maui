@@ -38,228 +38,312 @@ namespace AppOV.Platforms.Android
 
         // --------- JS HOOKS TEMPRANOS (se inyectan en OnPageStarted y también en popups) ----------
         static readonly string EarlyHooksJs = @"
-(function(){
-  if (window.__earlyHooksInstalled) return; window.__earlyHooksInstalled = true;
+        (function(){
+            if (window.__earlyHooksInstalled) return; window.__earlyHooksInstalled = true;
 
-  function log(m){ try { window.jsBridge && window.jsBridge.Dbg && window.jsBridge.Dbg(m); } catch(_){ } }
+            function log(m){ try { window.jsBridge && window.jsBridge.Dbg && window.jsBridge.Dbg(m); } catch(_){ } }
 
-  // Registro de blobs y prebuffer a dataURL
-  window.__blobRegistry = window.__blobRegistry || {};
-  document.addEventListener('click', function(ev){
-    try {
-      var t = ev.target;
-      window.__lastClickText = (t && (t.innerText || t.textContent) || '').toLowerCase();
-    } catch(e){}
-  }, true);
-
-  (function(){
-    var _origCreate = URL.createObjectURL;
-    var _origRevoke = URL.revokeObjectURL;
-
-    URL.createObjectURL = function(obj){
-      var url = _origCreate.call(this, obj);
-      try {
-        var entry = {
-          blob: obj, type: (obj && obj.type) || '', size: (obj && obj.size) || 0,
-          revoked: false, dataUrl: null
-        };
-        window.__blobRegistry[url] = entry;
-        // prebuffer inmediato
-        try {
-          var fr = new FileReader();
-          fr.onloadend = function(){ try{ entry.dataUrl = fr.result; }catch(_){ } };
-          fr.readAsDataURL(obj);
-        } catch(_){}
-      } catch(_){}
-      return url;
-    };
-
-    URL.revokeObjectURL = function(u){
-      try {
-        if (window.__blobRegistry && window.__blobRegistry[u]) window.__blobRegistry[u].revoked = true;
-      } catch(_){}
-      // diferimos la revocación real para evitar ERR_FILE_NOT_FOUND
-      try { var self=this; setTimeout(function(){ try{ _origRevoke.call(self, u); }catch(_){ } }, 5000); }
-      catch(_){ try{ _origRevoke.call(this,u); }catch(e){} }
-    };
-  })();
-
-  async function blobToDataUrl(blob){
-    return await new Promise(function(res){
-      var fr = new FileReader();
-      fr.onloadend = function(){ res(fr.result); };
-      fr.readAsDataURL(blob);
-    });
-  }
-
-  async function blobUrlToDataUrl(blobUrl){
-    try{
-      var meta = (window.__blobRegistry && window.__blobRegistry[blobUrl]) || null;
-      if (meta){
-        if (meta.dataUrl) return meta.dataUrl;
-        if (meta.blob) return await blobToDataUrl(meta.blob);
-      }
-      // último recurso (puede fallar si ya fue revocado, pero intentamos igual)
-      var b = await (await fetch(blobUrl)).blob();
-      return await blobToDataUrl(b);
-    }catch(e){ log('blobUrlToDataUrl error: ' + e); return null; }
-  }
-
-  window.__nativeDownload = async function(input, suggestedName){
-    try{
-      var name = suggestedName || '';
-      if (typeof Blob !== 'undefined' && input instanceof Blob){
-        var du = await blobToDataUrl(input);
-        return sendToNative(du, name || 'download.csv');
-      }
-      if (typeof input === 'string' && input.indexOf('blob:') === 0){
-        var dataUrl = await blobUrlToDataUrl(input);
-        if (dataUrl) return sendToNative(dataUrl, name || 'download.csv');
-        return false;
-      }
-      if (typeof input === 'string' && input.indexOf('data:') === 0){
-        return sendToNative(input, name || 'download.csv');
-      }
-    }catch(e){ log('__nativeDownload error: ' + e); }
-    return false;
-  };
-
-  function sendToNative(dataUrl, fileName){
-    if (!fileName) fileName = 'download.bin';
-    try{
-      if (window.jsBridge && typeof window.jsBridge.saveBase64 === 'function'){
-        log('[DL] sendToNative -> ' + fileName + ' len=' + (dataUrl ? dataUrl.length : 0));
-        window.jsBridge.saveBase64(dataUrl, fileName);
-        return true;
-      }
-      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge){
-        window.webkit.messageHandlers.jsBridge.postMessage({ data: dataUrl, fileName: fileName });
-        return true;
-      }
-    }catch(e){ log('sendToNative error: ' + e); }
-    return false;
-  }
-
-  // Intercepta anchors y programático
-  document.addEventListener('click', function(ev){
-    try{
-      var a = ev.target && ev.target.closest && ev.target.closest('a');
-      if (!a) return;
-      var href = a.getAttribute('href') || '';
-      var dn = a.getAttribute('download') || '';
-      if (!href) return;
-      if (href.indexOf('blob:') === 0 || href.indexOf('data:') === 0){
-        ev.preventDefault(); ev.stopPropagation();
-        window.__nativeDownload(href, dn || guessNameFromMeta(href));
-      }
-    }catch(e){ log('click handler error: ' + e); }
-  }, true);
-
-  try{
-    var origClick = HTMLAnchorElement.prototype.click;
-    HTMLAnchorElement.prototype.click = function(){
-      var href = this.getAttribute('href') || '';
-      var dn = this.getAttribute('download') || '';
-      if (href && (href.indexOf('blob:') === 0 || href.indexOf('data:') === 0)){
-        return void window.__nativeDownload(href, dn || guessNameFromMeta(href));
-      }
-      return origClick.call(this);
-    };
-  }catch(e){}
-
-  // Guard top-nav a blob:/data:
-  (function(){
-    function handle(url, dn){
-      try{
-        if (!url) return false;
-        var u = String(url);
-        if (u.indexOf('blob:') === 0 || u.indexOf('data:') === 0){
-          window.__nativeDownload(u, dn || guessNameFromMeta(u));
-          return true;
-        }
-      }catch(e){}
-      return false;
-    }
-    try{
-      var _open = window.open;
-      window.open = function(u){ if (handle(u,'')) return null; return _open.apply(this, arguments); };
-    }catch(_){}
-    try{
-      var _assign = window.location.assign.bind(window.location);
-      window.location.assign = function(u){ if (handle(u,'')) return; return _assign(u); };
-      var _replace = window.location.replace.bind(window.location);
-      window.location.replace = function(u){ if (handle(u,'')) return; return _replace(u); };
-      var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
-      if (desc && desc.set && desc.configurable){
-        Object.defineProperty(Location.prototype, 'href', {
-          get: desc.get,
-          set: function(u){ if (handle(u,'')) return; return desc.set.call(this, u); },
-          configurable: true,
-          enumerable: desc.enumerable
-        });
-      }
-    }catch(_){}
-  })();
-
-  // Hook saveAs / msSaveOrOpenBlob
-  (function(){
-    function interceptSaveAs(){
-      try{
-        var original = window.saveAs;
-        window.saveAs = function(blob, name){
-          try{
-            if (typeof window.__nativeDownload === 'function' && blob){
-              return window.__nativeDownload(blob, name || 'download.csv');
-            }
-          }catch(e){}
-          if (original) return original.apply(this, arguments);
-          return false;
-        };
-      }catch(_){}
-    }
-    function interceptMsSave(){
-      try{
-        if (window.navigator && typeof window.navigator.msSaveOrOpenBlob === 'function'){
-          var orig = window.navigator.msSaveOrOpenBlob;
-          window.navigator.msSaveOrOpenBlob = function(blob, name){
+            // === HOOKS PARA TOKEN EN localStorage/sessionStorage ===
+            function __installTokenStorageHooks(){
             try{
-              if (typeof window.__nativeDownload === 'function' && blob){
-                return window.__nativeDownload(blob, name || 'download.csv');
-              }
-            }catch(e){}
-            return orig.call(window.navigator, blob, name);
-          };
-        }
-      }catch(_){}
-    }
-    interceptSaveAs();
-    interceptMsSave();
-    try{
-      var _d = Object.getOwnPropertyDescriptor(window, 'saveAs');
-      if (!_d || _d.configurable){
-        var _val = window.saveAs;
-        Object.defineProperty(window, 'saveAs', {
-          get: function(){ return _val; },
-          set: function(v){ _val = v; try{ interceptSaveAs(); }catch(_){} },
-          configurable: true,
-          enumerable: true
-        });
-      }
-    }catch(_){}
-  })();
+                var keys = ['access_token','token','jwt','id_token'];
 
-  function guessNameFromMeta(href){
-    try{
-      var meta = (window.__blobRegistry && window.__blobRegistry[href]) || null;
-      var last = (window.__lastClickText || '').toLowerCase();
-      if (meta && meta.type && meta.type.indexOf('spreadsheetml')>=0) return 'export.xlsx';
-      if (meta && meta.type && meta.type.indexOf('csv')>=0) return 'export.csv';
-      if (last.includes('xlsx')) return 'export.xlsx';
-      if (last.includes('csv')) return 'export.csv';
-    }catch(_){}
-    return 'download.csv';
-  }
-})();";
+                function isTokenKey(k){
+                if (!k) return false;
+                k = String(k).toLowerCase();
+                for (var i=0; i<keys.length; i++){
+                    if (k === keys[i]) return true;
+                }
+                return false;
+                }
+
+                var ls = window.localStorage;
+                if (ls && !ls.__nativeTokenPatched){
+                var origSet = ls.setItem;
+                ls.setItem = function(k, v){
+                    try{
+                    if (isTokenKey(k) && window.jsBridge && typeof window.jsBridge.OnToken === 'function'){
+                        window.jsBridge.OnToken(v);
+                        log('localStorage.setItem token len=' + (v ? String(v).length : 0));
+                    }
+                    }catch(e){ log('localStorage.setItem hook error: ' + e); }
+                    return origSet.apply(this, arguments);
+                };
+                ls.__nativeTokenPatched = true;
+                }
+
+                var ss = window.sessionStorage;
+                if (ss && !ss.__nativeTokenPatched){
+                var origSetS = ss.setItem;
+                ss.setItem = function(k, v){
+                    try{
+                    if (isTokenKey(k) && window.jsBridge && typeof window.jsBridge.OnToken === 'function'){
+                        window.jsBridge.OnToken(v);
+                        log('sessionStorage.setItem token len=' + (v ? String(v).length : 0));
+                    }
+                    }catch(e){ log('sessionStorage.setItem hook error: ' + e); }
+                    return origSetS.apply(this, arguments);
+                };
+                ss.__nativeTokenPatched = true;
+                }
+            }catch(e){
+                log('installTokenStorageHooks error: ' + e);
+            }
+            }
+
+            function __syncExistingToken(){
+            try{
+                var keys = ['access_token','token','jwt','id_token'];
+                var found = null;
+
+                for (var i=0; i<keys.length; i++){
+                var k = keys[i];
+                var v = null;
+                try{
+                    if (window.localStorage)  v = v || window.localStorage.getItem(k);
+                    if (window.sessionStorage) v = v || window.sessionStorage.getItem(k);
+                }catch(_){}
+
+                if (v){
+                    found = v;
+                    break;
+                }
+                }
+
+                if (found && window.jsBridge && typeof window.jsBridge.OnToken === 'function'){
+                window.jsBridge.OnToken(found);
+                log('syncExistingToken -> token len=' + (found ? String(found).length : 0));
+                }
+            }catch(e){
+                log('syncExistingToken error: ' + e);
+            }
+            }
+
+            try{
+            __installTokenStorageHooks();
+            __syncExistingToken();
+            }catch(e){
+            log('token hooks init error: ' + e);
+            }
+
+            // Registro de blobs y prebuffer a dataURL
+            window.__blobRegistry = window.__blobRegistry || {};
+            document.addEventListener('click', function(ev){
+            try {
+                var t = ev.target;
+                window.__lastClickText = (t && (t.innerText || t.textContent) || '').toLowerCase();
+            } catch(e){}
+            }, true);
+
+            (function(){
+            var _origCreate = URL.createObjectURL;
+            var _origRevoke = URL.revokeObjectURL;
+
+            URL.createObjectURL = function(obj){
+                var url = _origCreate.call(this, obj);
+                try {
+                var entry = {
+                    blob: obj, type: (obj && obj.type) || '', size: (obj && obj.size) || 0,
+                    revoked: false, dataUrl: null
+                };
+                window.__blobRegistry[url] = entry;
+                // prebuffer inmediato
+                try {
+                    var fr = new FileReader();
+                    fr.onloadend = function(){ try{ entry.dataUrl = fr.result; }catch(_){ } };
+                    fr.readAsDataURL(obj);
+                } catch(_){}
+                } catch(_){}
+                return url;
+            };
+
+            URL.revokeObjectURL = function(u){
+                try {
+                if (window.__blobRegistry && window.__blobRegistry[u]) window.__blobRegistry[u].revoked = true;
+                } catch(_){}
+                // diferimos la revocación real para evitar ERR_FILE_NOT_FOUND
+                try { var self=this; setTimeout(function(){ try{ _origRevoke.call(self, u); }catch(_){ } }, 5000); }
+                catch(_){ try{ _origRevoke.call(this,u); }catch(e){} }
+            };
+            })();
+
+            async function blobToDataUrl(blob){
+            return await new Promise(function(res){
+                var fr = new FileReader();
+                fr.onloadend = function(){ res(fr.result); };
+                fr.readAsDataURL(blob);
+            });
+            }
+
+            async function blobUrlToDataUrl(blobUrl){
+            try{
+                var meta = (window.__blobRegistry && window.__blobRegistry[blobUrl]) || null;
+                if (meta){
+                if (meta.dataUrl) return meta.dataUrl;
+                if (meta.blob) return await blobToDataUrl(meta.blob);
+                }
+                // último recurso (puede fallar si ya fue revocado, pero intentamos igual)
+                var b = await (await fetch(blobUrl)).blob();
+                return await blobToDataUrl(b);
+            }catch(e){ log('blobUrlToDataUrl error: ' + e); return null; }
+            }
+
+            window.__nativeDownload = async function(input, suggestedName){
+            try{
+                var name = suggestedName || '';
+                if (typeof Blob !== 'undefined' && input instanceof Blob){
+                var du = await blobToDataUrl(input);
+                return sendToNative(du, name || 'download.csv');
+                }
+                if (typeof input === 'string' && input.indexOf('blob:') === 0){
+                var dataUrl = await blobUrlToDataUrl(input);
+                if (dataUrl) return sendToNative(dataUrl, name || 'download.csv');
+                return false;
+                }
+                if (typeof input === 'string' && input.indexOf('data:') === 0){
+                return sendToNative(input, name || 'download.csv');
+                }
+            }catch(e){ log('__nativeDownload error: ' + e); }
+            return false;
+            };
+
+            function sendToNative(dataUrl, fileName){
+            if (!fileName) fileName = 'download.bin';
+            try{
+                if (window.jsBridge && typeof window.jsBridge.saveBase64 === 'function'){
+                log('[DL] sendToNative -> ' + fileName + ' len=' + (dataUrl ? dataUrl.length : 0));
+                window.jsBridge.saveBase64(dataUrl, fileName);
+                return true;
+                }
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge){
+                window.webkit.messageHandlers.jsBridge.postMessage({ data: dataUrl, fileName: fileName });
+                return true;
+                }
+            }catch(e){ log('sendToNative error: ' + e); }
+            return false;
+            }
+
+            // Intercepta anchors y programático
+            document.addEventListener('click', function(ev){
+            try{
+                var a = ev.target && ev.target.closest && ev.target.closest('a');
+                if (!a) return;
+                var href = a.getAttribute('href') || '';
+                var dn = a.getAttribute('download') || '';
+                if (!href) return;
+                if (href.indexOf('blob:') === 0 || href.indexOf('data:') === 0){
+                ev.preventDefault(); ev.stopPropagation();
+                window.__nativeDownload(href, dn || guessNameFromMeta(href));
+                }
+            }catch(e){ log('click handler error: ' + e); }
+            }, true);
+
+            try{
+            var origClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function(){
+                var href = this.getAttribute('href') || '';
+                var dn = this.getAttribute('download') || '';
+                if (href && (href.indexOf('blob:') === 0 || href.indexOf('data:') === 0)){
+                return void window.__nativeDownload(href, dn || guessNameFromMeta(href));
+                }
+                return origClick.call(this);
+            };
+            }catch(e){}
+
+            // Guard top-nav a blob:/data:
+            (function(){
+            function handle(url, dn){
+                try{
+                if (!url) return false;
+                var u = String(url);
+                if (u.indexOf('blob:') === 0 || u.indexOf('data:') === 0){
+                    window.__nativeDownload(u, dn || guessNameFromMeta(u));
+                    return true;
+                }
+                }catch(e){}
+                return false;
+            }
+            try{
+                var _open = window.open;
+                window.open = function(u){ if (handle(u,'')) return null; return _open.apply(this, arguments); };
+            }catch(_){}
+            try{
+                var _assign = window.location.assign.bind(window.location);
+                window.location.assign = function(u){ if (handle(u,'')) return; return _assign(u); };
+                var _replace = window.location.replace.bind(window.location);
+                window.location.replace = function(u){ if (handle(u,'')) return; return _replace(u); };
+                var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+                if (desc && desc.set && desc.configurable){
+                Object.defineProperty(Location.prototype, 'href', {
+                    get: desc.get,
+                    set: function(u){ if (handle(u,'')) return; return desc.set.call(this, u); },
+                    configurable: true,
+                    enumerable: desc.enumerable
+                });
+                }
+            }catch(_){}
+            })();
+
+            // Hook saveAs / msSaveOrOpenBlob
+            (function(){
+            function interceptSaveAs(){
+                try{
+                var original = window.saveAs;
+                window.saveAs = function(blob, name){
+                    try{
+                    if (typeof window.__nativeDownload === 'function' && blob){
+                        return window.__nativeDownload(blob, name || 'download.csv');
+                    }
+                    }catch(e){}
+                    if (original) return original.apply(this, arguments);
+                    return false;
+                };
+                }catch(_){}
+            }
+            function interceptMsSave(){
+                try{
+                if (window.navigator && typeof window.navigator.msSaveOrOpenBlob === 'function'){
+                    var orig = window.navigator.msSaveOrOpenBlob;
+                    window.navigator.msSaveOrOpenBlob = function(blob, name){
+                    try{
+                        if (typeof window.__nativeDownload === 'function' && blob){
+                        return window.__nativeDownload(blob, name || 'download.csv');
+                        }
+                    }catch(e){}
+                    return orig.call(window.navigator, blob, name);
+                    };
+                }
+                }catch(_){}
+            }
+            interceptSaveAs();
+            interceptMsSave();
+            try{
+                var _d = Object.getOwnPropertyDescriptor(window, 'saveAs');
+                if (!_d || _d.configurable){
+                var _val = window.saveAs;
+                Object.defineProperty(window, 'saveAs', {
+                    get: function(){ return _val; },
+                    set: function(v){ _val = v; try{ interceptSaveAs(); }catch(_){} },
+                    configurable: true,
+                    enumerable: true
+                });
+                }
+            }catch(_){}
+            })();
+
+            function guessNameFromMeta(href){
+            try{
+                var meta = (window.__blobRegistry && window.__blobRegistry[href]) || null;
+                var last = (window.__lastClickText || '').toLowerCase();
+                if (meta && meta.type && meta.type.indexOf('spreadsheetml')>=0) return 'export.xlsx';
+                if (meta && meta.type && meta.type.indexOf('csv')>=0) return 'export.csv';
+                if (last.includes('xlsx')) return 'export.xlsx';
+                if (last.includes('csv')) return 'export.csv';
+            }catch(_){}
+            return 'download.csv';
+            }
+        })();";
+
 
         protected override global::Android.Webkit.WebView CreatePlatformView()
         {
@@ -390,6 +474,8 @@ namespace AppOV.Platforms.Android
                 var h = HostOf(url);
                 return h == "edelap.ovqa.storey.com.ar" ||
                        h == "edelap.ovdev.storey.com.ar" ||
+                       h == "portalderecargaqa.cashpower.com.ar" ||
+                       h == "portalderecarga.cashpower.com.ar" ||
                        h == "localhost" ||
                        h == "10.0.2.2" ||
                        h == "hemikaryotic-sanford-unmetallically.ngrok-free.dev";
@@ -445,6 +531,7 @@ namespace AppOV.Platforms.Android
                     try { view.StopLoading(); } catch { }
                     view.Post(() => { try { view.EvaluateJavascript(JsFromBlobUrl(url), null); } catch { } });
                     Log.Debug("JSDBG", "[blob] handled natively (cancel + JS save)");
+                    AppLogger.Log("JSDBG", "[blob] handled natively (cancel + JS save)");
                     return true;
                 }
 
@@ -453,6 +540,7 @@ namespace AppOV.Platforms.Android
                     try { view.StopLoading(); } catch { }
                     view.Post(() => { try { view.EvaluateJavascript(JsFromDataUrl(url), null); } catch { } });
                     Log.Debug("JSDBG", "[data] handled natively (cancel + JS save)");
+                    AppLogger.Log("JSDBG", "[blob] handled natively (cancel + JS save)");
                     return true;
                 }
 
@@ -665,6 +753,7 @@ namespace AppOV.Platforms.Android
                     catch { }
 
                     var composed = $"[console][{levelStr}] {msg} (src={src}:{line})";
+                    AppLogger.Log("JSDBG", composed);
                     if (levelStr.Equals("ERROR", StringComparison.OrdinalIgnoreCase))
                         Log.Error("JSDBG", composed);
                     else
@@ -779,6 +868,7 @@ namespace AppOV.Platforms.Android
                 if (url.StartsWith("blob:", StringComparison.OrdinalIgnoreCase))
                 {
                     Log.Debug("JSDBG", "[DL] Blob reached DownloadListener (late) -> handling anyway");
+                    AppLogger.Log("JSDBG", "[DL] Blob reached DownloadListener (late) -> handling anyway");
                     _webView.Post(() => _webView.EvaluateJavascript(JsFromBlobUrl(url), null));
                     return;
                 }
@@ -879,7 +969,9 @@ namespace AppOV.Platforms.Android
             [JavascriptInterface, Export("dbg")]
             public void Dbg(string msg)
             {
-                try { Log.Debug("JSDBG", msg ?? ""); } catch { }
+                try {
+                    AppLogger.Log("JSDBG", msg ?? "");
+                    Log.Debug("JSDBG", msg ?? ""); } catch { }
             }
 
             [JavascriptInterface, Export("Dbg")]
@@ -893,8 +985,9 @@ namespace AppOV.Platforms.Android
                     var token = TryExtractToken(tokenRawOrJson);
                     if (!string.IsNullOrEmpty(token))
                         Preferences.Set("web_jwt", token);
+                    AppLogger.Log("AuthAwareClient", $"JWT guardado en Preferences (len={token?.Length ?? 0})");
                 }
-                catch (Exception ex) { Log.Error("JsBridge", $"OnToken error: {ex}"); }
+                catch (Exception ex) { AppLogger.Log("JsBridge", $"OnToken error: {ex}"); }
             }
 
             [JavascriptInterface, Export("OpenExternal")]

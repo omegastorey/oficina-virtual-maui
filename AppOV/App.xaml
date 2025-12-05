@@ -6,6 +6,7 @@
         <ResourceDictionary>
             <!-- Color/brush de marca. El valor inicial se sobreescribe en App.xaml.cs -->
             <Color x:Key="BrandPrimaryColor">#153C46</Color>
+            <!--<Color x:Key="BrandPrimaryColor">#FF0012</Color>-->
             <SolidColorBrush x:Key="BrandPrimaryBrush"
                        Color="{DynamicResource BrandPrimaryColor}" />
 

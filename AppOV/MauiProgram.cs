@@ -17,10 +17,11 @@ namespace AppOV
 {
     public static class MauiProgram
     {
+        private const string LogTag = "MauiProgram";
         public static MauiApp CreateMauiApp()
         {
-            var builder = MauiApp.CreateBuilder();
 
+            var builder = MauiApp.CreateBuilder();
             builder
                 .UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
@@ -49,7 +50,7 @@ namespace AppOV
                     }
                     catch (System.Exception ex)
                     {
-                        Android.Util.Log.Error("MauiProgram", $"WhiteBG mapping failed: {ex}");
+                        AppLogger.Log(LogTag, $"WhiteBG mapping failed: {ex}");
                     }
                 });
 
@@ -88,12 +89,12 @@ namespace AppOV
                         }
                         catch (System.Exception ex2)
                         {
-                            Android.Util.Log.Warn("MauiProgram", $"AcceptThirdPartyCookies warning: {ex2.Message}");
+                            AppLogger.Log(LogTag, $"AcceptThirdPartyCookies warning: {ex2.Message}");
                         }
                     }
                     catch (System.Exception ex)
                     {
-                        Android.Util.Log.Error("MauiProgram", $"AndroidTweaks mapping failed: {ex}");
+                        AppLogger.Log(LogTag, $"AndroidTweaks mapping failed: {ex}");
                     }
                 });
 
@@ -117,7 +118,7 @@ namespace AppOV
                     }
                     catch (System.Exception ex)
                     {
-                        Android.Util.Log.Error("MauiProgram", $"AuthClients mapping failed: {ex}");
+                        AppLogger.Log(LogTag, $"AuthClients mapping failed: {ex}");
                     }
                 });
 
@@ -143,7 +144,7 @@ namespace AppOV
                     }
                     catch (System.Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[iOS] WhiteBG mapping failed: {ex}");
+                        AppLogger.Log(LogTag, $"[iOS] WhiteBG mapping failed: {ex}");
                     }
                 });
             });

@@ -13,9 +13,9 @@
 
     <ApplicationTitle>AppOV</ApplicationTitle>
     <ApplicationId>com.storey.AppOV.Edelap</ApplicationId>
-    <ApplicationDisplayVersion>1.0.2</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>1.0.3</ApplicationDisplayVersion>
     <!-- este es el versionCode que ve Play -->
-    <ApplicationVersion>9</ApplicationVersion>
+    <ApplicationVersion>11</ApplicationVersion>
 
     <!-- Android mínimo que soporta la app (analyzers) -->
     <SupportedOSPlatformVersion>29.0</SupportedOSPlatformVersion>
@@ -24,6 +24,7 @@
 
     <!-- Color de marca centralizado -->
     <BrandPrimaryColor>#153C46</BrandPrimaryColor>
+    <!--<BrandPrimaryColor>#FF0012</BrandPrimaryColor>-->
   </PropertyGroup>
 
   <!-- ================== ANDROID COMÚN ================== -->
@@ -66,6 +67,7 @@
     <AndroidSigningKeyPass>...</AndroidSigningKeyPass>
     <AndroidSigningStorePass>...</AndroidSigningStorePass>
     -->
+  <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
 
   <!-- ================== ANDROID DEBUG ================== -->
@@ -78,11 +80,18 @@
 
     <RunAOTCompilation>false</RunAOTCompilation>
     <PublishAot>false</PublishAot>
+  
+  <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
 
   <!-- ================== RECURSOS MAUI ================== -->
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\estrella.svg" ForegroundFile="Resources/AppIcon/estrella_foreground.svg" MonochromeFile="Resources/AppIcon/estrella_mono.svg" IsAdaptive="true" BackgroundColor="#FFFFFF" />
+    <!--<MauiIcon Include="Resources\AppIcon\cash.svg"
+            ForegroundFile="Resources/AppIcon/cash_foreground.svg"
+            MonochromeFile="Resources/AppIcon/cash_mono.svg"
+            IsAdaptive="true"
+            Color="#FFFFFF" />-->
     <MauiSplashScreen Include="Resources\Splash\splashedelap.svg" Color="#FFFFFF" />
     <MauiImage Include="Resources\Images\*" />
     <MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />

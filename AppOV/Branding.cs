@@ -5,6 +5,7 @@ public static class Branding
 {
     /// <summary>Color por defecto si la web/empresa no provee otro.</summary>
     public static string DefaultHex { get; } = "#153C46";
+    //public static string DefaultHex { get; } = "#FF0012";
 
     private static string _currentHex = DefaultHex;
     public static string CurrentHex => _currentHex;

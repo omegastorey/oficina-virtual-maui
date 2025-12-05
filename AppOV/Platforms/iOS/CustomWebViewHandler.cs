@@ -16,33 +16,118 @@ namespace AppOV.Platforms.iOS
 {
     public class CustomWebViewHandler : WebViewHandler
     {
-        // Hooks tempranos también en iOS (DocumentStart)
-        static readonly string EarlyHooksJs = @"
-(function(){ if (window.__earlyHooksInstalled) return; window.__earlyHooksInstalled = true;
-  function log(m){ try{ window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge && window.webkit.messageHandlers.jsBridge.postMessage('DBG:'+m);}catch(_){ } }
-  window.__blobRegistry = window.__blobRegistry || {};
-  document.addEventListener('click', function(ev){ try{ var t=ev.target; window.__lastClickText=(t&&(t.innerText||t.textContent)||'').toLowerCase(); }catch(e){} }, true);
-  (function(){
-    var _origCreate=URL.createObjectURL, _origRevoke=URL.revokeObjectURL;
-    URL.createObjectURL=function(obj){ var url=_origCreate.call(this,obj); try{ var e={blob:obj,type:(obj&&obj.type)||'',size:(obj&&obj.size)||0,revoked:false,dataUrl:null}; window.__blobRegistry[url]=e; try{ var fr=new FileReader(); fr.onloadend=function(){ try{ e.dataUrl=fr.result; }catch(_){ } }; fr.readAsDataURL(obj);}catch(_){}}catch(_){ } return url; };
-    URL.revokeObjectURL=function(u){ try{ if(window.__blobRegistry&&window.__blobRegistry[u]) window.__blobRegistry[u].revoked=true; }catch(_){ }
-      try{ var self=this; setTimeout(function(){ try{ _origRevoke.call(self,u); }catch(_){ } }, 5000);}catch(_){ try{ _origRevoke.call(this,u); }catch(e){} } };
-  })();
-  async function blobToDataUrl(blob){ return await new Promise(function(res){ var fr=new FileReader(); fr.onloadend=function(){res(fr.result);}; fr.readAsDataURL(blob); }); }
-  async function blobUrlToDataUrl(u){ try{ var m=(window.__blobRegistry&&window.__blobRegistry[u])||null; if(m){ if(m.dataUrl) return m.dataUrl; if(m.blob) return await blobToDataUrl(m.blob); } var b=await (await fetch(u)).blob(); return await blobToDataUrl(b); }catch(e){ return null; } }
-  window.__nativeDownload = async function(input,name){ try{ if(typeof Blob!=='undefined' && input instanceof Blob){ var du=await blobToDataUrl(input); return sendToNative(du,name||'download.csv'); } if(typeof input==='string' && input.indexOf('blob:')===0){ var du=await blobUrlToDataUrl(input); if(du) return sendToNative(du,name||'download.csv'); return false; } if(typeof input==='string' && input.indexOf('data:')===0){ return sendToNative(input,name||'download.csv'); } }catch(e){} return false; };
-  function sendToNative(du,fn){ try{ window.webkit.messageHandlers.jsBridge.postMessage({ data: du, fileName: fn||'download.bin' }); return true; }catch(e){ return false; } }
-  document.addEventListener('click', function(ev){ try{ var a=ev.target&&ev.target.closest&&ev.target.closest('a'); if(!a) return; var href=a.getAttribute('href')||''; var dn=a.getAttribute('download')||''; if(!href) return; if(href.indexOf('blob:')===0||href.indexOf('data:')===0){ ev.preventDefault(); ev.stopPropagation(); window.__nativeDownload(href,dn||'download.csv'); } }catch(_){ } }, true);
-  try{ var oc=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){ var href=this.getAttribute('href')||''; var dn=this.getAttribute('download')||''; if(href&&(href.indexOf('blob:')===0||href.indexOf('data:')===0)) return void window.__nativeDownload(href,dn||'download.csv'); return oc.call(this); }; }catch(_){}
-  (function(){ function handle(u){ if(!u) return false; u=String(u); if(u.indexOf('blob:')===0||u.indexOf('data:')===0){ window.__nativeDownload(u,'download.csv'); return true; } return false; }
-    try{ var _open=window.open; window.open=function(u){ if(handle(u)) return null; return _open.apply(this,arguments); }; }catch(_){}
-    try{ var _assign=window.location.assign.bind(window.location); window.location.assign=function(u){ if(handle(u)) return; return _assign(u); }; var _replace=window.location.replace.bind(window.location); window.location.replace=function(u){ if(handle(u)) return; return _replace(u); };
-      var d=Object.getOwnPropertyDescriptor(Location.prototype,'href'); if(d&&d.set&&d.configurable){ Object.defineProperty(Location.prototype,'href',{ get:d.get, set:function(u){ if(handle(u)) return; return d.set.call(this,u); }, configurable:true, enumerable:d.enumerable }); } }catch(_){}
-  })();
-  (function(){ try{ var orig=window.saveAs; window.saveAs=function(b,n){ try{ if(typeof window.__nativeDownload==='function' && b) return window.__nativeDownload(b,n||'download.csv'); }catch(_){ } if(orig) return orig.apply(this,arguments); return false; }; }catch(_){ }
-    try{ if(window.navigator && typeof window.navigator.msSaveOrOpenBlob==='function'){ var o=window.navigator.msSaveOrOpenBlob; window.navigator.msSaveOrOpenBlob=function(b,n){ try{ if(typeof window.__nativeDownload==='function' && b) return window.__nativeDownload(b,n||'download.csv'); }catch(_){ } return o.call(window.navigator,b,n); }; } }catch(_){ }
-  })();
-})();";
+// Hooks tempranos también en iOS (DocumentStart)
+static readonly string EarlyHooksJs = @"
+        (function(){ if (window.__earlyHooksInstalled) return; window.__earlyHooksInstalled = true;
+        function log(m){ try{ window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge && window.webkit.messageHandlers.jsBridge.postMessage('DBG:'+m);}catch(_){ } }
+
+        // === HOOKS PARA TOKEN EN localStorage/sessionStorage ===
+        function __installTokenStorageHooks(){
+            try{
+            var keys = ['access_token','token','jwt','id_token'];
+
+            function isTokenKey(k){
+                if (!k) return false;
+                k = String(k).toLowerCase();
+                for (var i=0; i<keys.length; i++){
+                if (k === keys[i]) return true;
+                }
+                return false;
+            }
+
+            var ls = window.localStorage;
+            if (ls && !ls.__nativeTokenPatched){
+                var origSet = ls.setItem;
+                ls.setItem = function(k, v){
+                try{
+                    if (isTokenKey(k) && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge){
+                    window.webkit.messageHandlers.jsBridge.postMessage({ token: v });
+                    log('localStorage.setItem token len=' + (v ? String(v).length : 0));
+                    }
+                }catch(e){ log('localStorage.setItem hook error: ' + e); }
+                return origSet.apply(this, arguments);
+                };
+                ls.__nativeTokenPatched = true;
+            }
+
+            var ss = window.sessionStorage;
+            if (ss && !ss.__nativeTokenPatched){
+                var origSetS = ss.setItem;
+                ss.setItem = function(k, v){
+                try{
+                    if (isTokenKey(k) && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge){
+                    window.webkit.messageHandlers.jsBridge.postMessage({ token: v });
+                    log('sessionStorage.setItem token len=' + (v ? String(v).length : 0));
+                    }
+                }catch(e){ log('sessionStorage.setItem hook error: ' + e); }
+                return origSetS.apply(this, arguments);
+                };
+                ss.__nativeTokenPatched = true;
+            }
+            }catch(e){
+            log('installTokenStorageHooks error: ' + e);
+            }
+        }
+
+        function __syncExistingToken(){
+            try{
+            var keys = ['access_token','token','jwt','id_token'];
+            var found = null;
+
+            for (var i=0; i<keys.length; i++){
+                var k = keys[i];
+                var v = null;
+                try{
+                if (window.localStorage)  v = v || window.localStorage.getItem(k);
+                if (window.sessionStorage) v = v || window.sessionStorage.getItem(k);
+                }catch(_){}
+
+                if (v){
+                found = v;
+                break;
+                }
+            }
+
+            if (found && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsBridge){
+                window.webkit.messageHandlers.jsBridge.postMessage({ token: found });
+                log('syncExistingToken -> token len=' + (found ? String(found).length : 0));
+            }
+            }catch(e){
+            log('syncExistingToken error: ' + e);
+            }
+        }
+
+        try{
+            __installTokenStorageHooks();
+            __syncExistingToken();
+        }catch(e){
+            log('token hooks init error: ' + e);
+        }
+
+        window.__blobRegistry = window.__blobRegistry || {};
+        document.addEventListener('click', function(ev){ try{ var t=ev.target; window.__lastClickText=(t&&(t.innerText||t.textContent)||'').toLowerCase(); }catch(e){} }, true);
+        (function(){
+            var _origCreate=URL.createObjectURL, _origRevoke=URL.revokeObjectURL;
+            URL.createObjectURL=function(obj){ var url=_origCreate.call(this,obj); try{ var e={blob:obj,type:(obj&&obj.type)||'',size:(obj&&obj.size)||0,revoked:false,dataUrl:null}; window.__blobRegistry[url]=e; try{ var fr=new FileReader(); fr.onloadend=function(){ try{ e.dataUrl=fr.result; }catch(_){ } }; fr.readAsDataURL(obj);}catch(_){}}catch(_){ } return url; };
+            URL.revokeObjectURL=function(u){ try{ if(window.__blobRegistry&&window.__blobRegistry[u]) window.__blobRegistry[u].revoked=true; }catch(_){ }
+            try{ var self=this; setTimeout(function(){ try{ _origRevoke.call(self,u); }catch(_){ } }, 5000);}catch(_){ try{ _origRevoke.call(this,u); }catch(e){} } };
+        })();
+        async function blobToDataUrl(blob){ return await new Promise(function(res){ var fr=new FileReader(); fr.onloadend=function(){res(fr.result);}; fr.readAsDataURL(blob); }); }
+        async function blobUrlToDataUrl(u){ try{ var m=(window.__blobRegistry&&window.__blobRegistry[u])||null; if(m){ if(m.dataUrl) return m.dataUrl; if(m.blob) return await blobToDataUrl(m.blob); } var b=await (await fetch(u)).blob(); return await blobToDataUrl(b); }catch(e){ return null; } }
+        window.__nativeDownload = async function(input,name){ try{ if(typeof Blob!=='undefined' && input instanceof Blob){ var du=await blobToDataUrl(input); return sendToNative(du,name||'download.csv'); } if(typeof input==='string' && input.indexOf('blob:')===0){ var du=await blobUrlToDataUrl(input); if(du) return sendToNative(du,name||'download.csv'); return false; } if(typeof input==='string' && input.indexOf('data:')===0){ return sendToNative(input,name||'download.csv'); } }catch(e){} return false; };
+        function sendToNative(du,fn){ try{ window.webkit.messageHandlers.jsBridge.postMessage({ data: du, fileName: fn||'download.bin' }); return true; }catch(e){ return false; } }
+        document.addEventListener('click', function(ev){ try{ var a=ev.target&&ev.target.closest&&ev.target.closest('a'); if(!a) return; var href=a.getAttribute('href')||''; var dn=a.getAttribute('download')||''; if(!href) return; if(href.indexOf('blob:')===0||href.indexOf('data:')===0){ ev.preventDefault(); ev.stopPropagation(); window.__nativeDownload(href,dn||'download.csv'); } }catch(_){ } }, true);
+        try{ var oc=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){ var href=this.getAttribute('href')||''; var dn=this.getAttribute('download')||''; if(href&&(href.indexOf('blob:')===0||href.indexOf('data:')===0)) return void window.__nativeDownload(href,dn||'download.csv'); return oc.call(this); }; }catch(_){}
+        (function(){ function handle(u){ if(!u) return false; u=String(u); if(u.indexOf('blob:')===0||u.indexOf('data:')===0){ window.__nativeDownload(u,'download.csv'); return true; } return false; }
+            try{ var _open=window.open; window.open=function(u){ if(handle(u)) return null; return _open.apply(this,arguments); }; }catch(_){}
+            try{ var _assign=window.location.assign.bind(window.location); window.location.assign=function(u){ if(handle(u)) return; return _assign(u); }; var _replace=window.location.replace.bind(window.location); window.location.replace=function(u){ if(handle(u)) return; return _replace(u); };
+            var d=Object.getOwnPropertyDescriptor(Location.prototype,'href'); if(d&&d.set&&d.configurable){ Object.defineProperty(Location.prototype,'href',{ get:d.get, set:function(u){ if(handle(u)) return; return d.set.call(this,u); }, configurable:true, enumerable:d.enumerable }); } }catch(_){}
+        })();
+        (function(){ try{ var orig=window.saveAs; window.saveAs=function(b,n){ try{ if(typeof window.__nativeDownload==='function' && b) return window.__nativeDownload(b,n||'download.csv'); }catch(_){ } if(orig) return orig.apply(this,arguments); return false; }; }catch(_){ }
+            try{ if(window.navigator && typeof window.navigator.msSaveOrOpenBlob==='function'){ var o=window.navigator.msSaveOrOpenBlob; window.navigator.msSaveOrOpenBlob=function(b,n){ try{ if(typeof window.__nativeDownload==='function' && b) return window.__nativeDownload(b,n||'download.csv'); }catch(_){ } return o.call(window.navigator,b,n); }; } }catch(_){ }
+        })();
+        })();";
+
 
         protected override WKWebView CreatePlatformView()
         {
@@ -263,7 +348,10 @@ namespace AppOV.Platforms.iOS
 
                 await CustomWebViewHandler.ShowOpenOrShareAsync(path, fileName, null);
             }
-            catch (Exception ex) { Console.WriteLine($"Error descargando {url}: {ex}"); }
+            catch (Exception ex) { 
+            Console.WriteLine($"Error descargando {url}: {ex}");
+            AppLogger.Log("JsBridgeIos", $"Error descargando {url}: {ex}");
+            }
         }
     }
 
@@ -368,7 +456,8 @@ namespace AppOV.Platforms.iOS
                 if (message.Body is NSString s)
                 {
                     var body = s.ToString();
-
+                    Console.WriteLine("[JS] " + body);
+                    AppLogger.Log("JsBridgeIos", body);
                     var maybeToken = TryExtractToken(body);
                     if (!string.IsNullOrEmpty(maybeToken))
                     {
@@ -381,7 +470,7 @@ namespace AppOV.Platforms.iOS
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[JsBridgeIos] Error: {ex}");
+                AppLogger.Log("JsBridgeIos", $"[JsBridgeIos] Error: {ex}");
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     await Application.Current?.MainPage?.DisplayAlert("Error", "No pudimos procesar el mensaje desde la web.", "OK");
